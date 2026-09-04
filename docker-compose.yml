@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ds-bot-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      # Нужен для локальной разработки: бот на хосте (npm run dev) и VS Code
+      # ходят в базу через localhost:5432. Если бот тоже будет постоянно
+      # крутиться в Docker (на сервере) - этот проброс можно закомментировать.
+      - "5432:5432"
+  rules-bot:
+    build: .
+    container_name: ds-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RULES_PATH: /app/data/rules.json
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # rules.json редактируется на хосте и подхватывается через `!rules reload`
+      # без пересборки образа и без перезапуска контейнера.
+      - ./data:/app/data
+volumes:
+  pgdata:

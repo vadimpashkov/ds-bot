@@ -1,0 +1,4 @@
+export const DATE_ALIAS = {
+	MILLISECONDS_PER_SECOND: 1000,
+	ONE_MINUTE: 60000,
+} as const;
