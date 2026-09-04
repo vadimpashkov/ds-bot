@@ -8,6 +8,7 @@ export interface SendVoiceInviteResult {
 
 export async function sendVoiceInvite(
 	channel: VoiceChannel,
+	channelOwnerName: string,
 	users: Collection<string, User>,
 ): Promise<SendVoiceInviteResult> {
 	const invite = await channel.createInvite({ maxAge: 0, unique: true });
@@ -17,7 +18,9 @@ export async function sendVoiceInvite(
 
 	for (const user of users.values()) {
 		try {
-			await user.send(`Тебя пригласили в голосовой канал **${channel.name}**: ${invite.url}`);
+			await user.send(
+				`**${channelOwnerName}** приглашает тебя в голосовой канал **${channel.name}**: ${invite.url}`,
+			);
 			invited.push(user.id);
 		} catch (error) {
 			// Частый случай - у человека закрыты личные сообщения от не-друзей.

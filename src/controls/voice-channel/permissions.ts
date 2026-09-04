@@ -1,55 +1,41 @@
 import { OverwriteType, PermissionFlagsBits, type VoiceChannel } from "discord.js";
 import { isStaffRole } from "@/shared/utils/is-staff-role";
 
-export async function lockChannel(channel: VoiceChannel): Promise<void> {
-	await channel.permissionOverwrites.edit(channel.guild.roles.everyone, { Connect: false });
+type PermissionFlag = typeof PermissionFlagsBits.Connect | typeof PermissionFlagsBits.ViewChannel;
 
-	const overwrites = [...channel.permissionOverwrites.cache.values()];
-	for (const overwrite of overwrites) {
-		if (overwrite.type !== OverwriteType.Role) {
-			continue;
+async function updateRolePermissions(
+	channel: VoiceChannel,
+	permission: PermissionFlag,
+	state: false | null,
+): Promise<void> {
+	const { everyone } = channel.guild.roles;
+	const key = permission === PermissionFlagsBits.Connect ? "Connect" : "ViewChannel";
+
+	await channel.permissionOverwrites.edit(everyone.id, { [key]: state });
+
+	const targets = channel.permissionOverwrites.cache.filter((overwrite) => {
+		if (overwrite.type !== OverwriteType.Role || overwrite.id === everyone.id || isStaffRole(overwrite.id)) {
+			return false;
 		}
+		return state === null ? overwrite.deny.has(permission) : overwrite.allow.has(permission);
+	});
 
-		if (overwrite.id === channel.guild.roles.everyone.id) {
-			continue;
-		}
-
-		if (isStaffRole(overwrite.id)) {
-			continue;
-		}
-
-		if (!overwrite.allow.has(PermissionFlagsBits.Connect)) {
-			continue;
-		}
-
-		await channel.permissionOverwrites.edit(overwrite.id, { Connect: false });
+	for (const overwrite of targets.values()) {
+		await channel.permissionOverwrites.edit(overwrite.id, { [key]: state });
 	}
 }
 
-export async function unlockChannel(channel: VoiceChannel): Promise<void> {
-	await channel.permissionOverwrites.edit(channel.guild.roles.everyone, { Connect: null });
+export const lockChannel = (channel: VoiceChannel) =>
+	updateRolePermissions(channel, PermissionFlagsBits.Connect, false);
 
-	const overwrites = [...channel.permissionOverwrites.cache.values()];
-	for (const overwrite of overwrites) {
-		if (overwrite.type !== OverwriteType.Role) {
-			continue;
-		}
+export const unlockChannel = (channel: VoiceChannel) =>
+	updateRolePermissions(channel, PermissionFlagsBits.Connect, null);
 
-		if (overwrite.id === channel.guild.roles.everyone.id) {
-			continue;
-		}
+export const hideChannel = (channel: VoiceChannel) =>
+	updateRolePermissions(channel, PermissionFlagsBits.ViewChannel, false);
 
-		if (isStaffRole(overwrite.id)) {
-			continue;
-		}
-
-		if (!overwrite.deny.has(PermissionFlagsBits.Connect)) {
-			continue;
-		}
-
-		await channel.permissionOverwrites.edit(overwrite.id, { Connect: null });
-	}
-}
+export const showChannel = (channel: VoiceChannel) =>
+	updateRolePermissions(channel, PermissionFlagsBits.ViewChannel, null);
 
 export async function inviteUsersToChannel(channel: VoiceChannel, userIds: string[]): Promise<void> {
 	for (const userId of userIds) {
@@ -57,5 +43,19 @@ export async function inviteUsersToChannel(channel: VoiceChannel, userIds: strin
 			Connect: true,
 			ViewChannel: true,
 		});
+	}
+}
+
+export async function kickUsersFromChannel(channel: VoiceChannel, userIds: string[]): Promise<void> {
+	for (const userId of userIds) {
+		await channel.permissionOverwrites.edit(userId, {
+			Connect: false,
+			ViewChannel: null,
+		});
+
+		const member = channel.members.get(userId);
+		if (member) {
+			await member.voice.disconnect();
+		}
 	}
 }

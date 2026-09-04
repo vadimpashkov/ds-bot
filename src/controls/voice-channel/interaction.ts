@@ -1,10 +1,11 @@
 import { ChannelType, type Interaction, MessageFlags } from "discord.js";
-import { findTempVoiceChannel, setTempVoiceChannelPrivacy } from "@/db/temp-voice-channels";
+import { findTempVoiceChannel } from "@/db/temp-voice-channels";
 import { logger } from "@/logger";
+import { buildVoiceControlComponents, buildVoiceControlModal } from "./components";
 import { sendVoiceInvite } from "./invite-link";
-import { inviteUsersToChannel, lockChannel, unlockChannel } from "./permissions";
+import { inviteUsersToChannel, kickUsersFromChannel } from "./permissions";
 
-// REMARK: customId кнопок/меню собран как "voice:action:channelId".
+// REMARK: customId кнопок/меню собран как "voice:action:channelId:noise".
 export const voiceControlInteractionHandler = async (interaction: Interaction): Promise<void> => {
 	if (!interaction.isButton() && !interaction.isUserSelectMenu()) {
 		return;
@@ -34,29 +35,24 @@ export const voiceControlInteractionHandler = async (interaction: Interaction): 
 	}
 
 	try {
-		if (action === "toggle") {
-			if (tempVoice.isPrivate) {
-				await unlockChannel(channel);
-				await setTempVoiceChannelPrivacy(channelId, false);
-				await interaction.reply({ content: "🔓 Канал снова публичный.", flags: MessageFlags.Ephemeral });
-			} else {
-				await lockChannel(channel);
-				await setTempVoiceChannelPrivacy(channelId, true);
-				await interaction.reply({
-					content: "🔒 Канал стал приватным - зайти смогут только приглашённые.",
-					flags: MessageFlags.Ephemeral,
-				});
-			}
+		if (action === "settings") {
+			const modal = buildVoiceControlModal(channelId, {
+				channelName: channel.name.split("・")[1],
+				userLimit: channel.userLimit,
+				isPrivate: tempVoice.isPrivate,
+				isInvisible: tempVoice.isInvisible,
+			});
+			await interaction.showModal(modal);
 			return;
 		}
 
 		if (action === "invite" && interaction.isUserSelectMenu()) {
-			// Discord не дает исключить себя из списка на уровне самого меню - фильтруем уже после выбора.
-			const selectedUsers = interaction.users.filter((user) => user.id !== interaction.user.id);
+			// Discord не дает исключить кого-либо из списка на уровне самого меню - фильтруем уже после выбора.
+			const selectedUsers = interaction.users.filter((user) => !channel.members.has(user.id));
 
 			if (selectedUsers.size === 0) {
 				await interaction.reply({
-					content: "Нельзя пригласить самого себя - ты и так внутри канала.",
+					content: "Нельзя пригласить участников, что уже находятся в канале.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
@@ -64,7 +60,11 @@ export const voiceControlInteractionHandler = async (interaction: Interaction): 
 
 			await inviteUsersToChannel(channel, [...selectedUsers.keys()]);
 
-			const { invited, failedDm } = await sendVoiceInvite(channel, selectedUsers);
+			const { invited, failedDm } = await sendVoiceInvite(
+				channel,
+				interaction.user.globalName ?? interaction.user.username,
+				selectedUsers,
+			);
 
 			const parts: string[] = [];
 			if (invited.length > 0) {
@@ -72,14 +72,47 @@ export const voiceControlInteractionHandler = async (interaction: Interaction): 
 			}
 			if (failedDm.length > 0) {
 				parts.push(
-					`Не смог написать в личку (закрыты ЛС): ${failedDm.map((id) => `<@${id}>`).join(", ")} - но доступ к каналу у них уже есть.`,
+					`Не смог отправить приглашения в личные сообщение (закрыты ЛС): ${failedDm.map((id) => `<@${id}>`).join(", ")} - но доступ к каналу у них уже есть.`,
 				);
+			}
+
+			// REMARK: Перерисовываем контроллеры, чтобы очистить кеш у самого Discord
+			if (interaction.message) {
+				await interaction.message.edit({
+					components: buildVoiceControlComponents(channelId),
+				});
 			}
 
 			await interaction.reply({ content: parts.join("\n"), flags: MessageFlags.Ephemeral });
 		}
+
+		if (action === "kick" && interaction.isUserSelectMenu()) {
+			// Discord не дает исключить себя из списка на уровне самого меню - фильтруем уже после выбора.
+			const selectedUsers = interaction.users.filter((user) => user.id !== interaction.user.id);
+
+			if (selectedUsers.size === 0) {
+				await interaction.reply({
+					content: "Нельзя выгнать самого себя.",
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			await kickUsersFromChannel(channel, [...selectedUsers.keys()]);
+
+			if (interaction.message) {
+				await interaction.message.edit({
+					components: buildVoiceControlComponents(channelId),
+				});
+			}
+
+			await interaction.reply({
+				content: `Участники ${selectedUsers.map((id) => id).join(", ")} были исключены из канала и больше не смогут в него войти (чтобы они смогли войти вновь - пригласите их).`,
+				flags: MessageFlags.Ephemeral,
+			});
+		}
 	} catch (error) {
-		logger.error({ error, channelId, action }, "Ошибка при управлении приватностью голосового канала");
+		logger.error({ error, channelId, action }, "Ошибка при управлении голосовым каналом");
 		await interaction.reply({
 			content: "Что-то пошло не так, попробуй ещё раз.",
 			flags: MessageFlags.Ephemeral,

@@ -1,5 +1,5 @@
 import { Events } from "discord.js";
-import { voiceControlInteractionHandler } from "@/controls/voice-channel";
+import { voiceControlInteractionHandler, voiceControlModalInteractionHandler } from "@/controls/voice-channel";
 import type { Event } from "@/events/types";
 import { interactionCreateHandler } from "./handler";
 
@@ -13,6 +13,11 @@ export const interactionCreateEvent: Event<Events.InteractionCreate> = {
 
 		if (interaction.isButton() || interaction.isUserSelectMenu()) {
 			await voiceControlInteractionHandler(interaction);
+			return;
+		}
+
+		if (interaction.isModalSubmit()) {
+			await voiceControlModalInteractionHandler(interaction);
 			return;
 		}
 	},
