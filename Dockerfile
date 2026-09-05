@@ -24,4 +24,4 @@ USER bot
 
 EXPOSE 3000
 
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "npx node-pg-migrate up && node dist/index.js"]
