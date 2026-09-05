@@ -21,7 +21,7 @@ services:
       # ходят в базу через localhost:5432. Если бот тоже будет постоянно
       # крутиться в Docker (на сервере) - этот проброс можно закомментировать.
       - "5432:5432"
-  rules-bot:
+  bot:
     build: .
     container_name: ds-bot
     restart: unless-stopped
