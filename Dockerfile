@@ -17,6 +17,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 COPY data ./data
+COPY migrations ./migrations
 
 RUN addgroup -S bot && adduser -S bot -G bot
 USER bot
